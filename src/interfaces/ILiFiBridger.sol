@@ -11,7 +11,7 @@ interface ILiFiBridger {
      * @param destinationChainId Target chain ID
      * @param amount WETH amount to bridge
      * @param recipient Address to receive gas on target chain
-     * @param lifiData LiFi route data
+     * @param lifiData Full calldata for LiFi Diamond call (including selector)
      */
     function bridgeToChain(
         uint256 destinationChainId,

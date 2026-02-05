@@ -9,94 +9,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import {InvestInGasHook} from "../src/InvestInGasHook.sol";
 import {LiFiBridger} from "../src/LiFiBridger.sol";
-
-// Mock PoolManager for isolated testing
-contract MockPoolManager {
-    function unlock(bytes calldata) external returns (bytes memory) {
-        return "";
-    }
-}
-
-// Mock WETH for testing
-contract MockWETH {
-    string public name = "Wrapped Ether";
-    string public symbol = "WETH";
-    uint8 public decimals = 18;
-
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    function transfer(address to, uint256 amount) external returns (bool) {
-        balanceOf[msg.sender] -= amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool) {
-        allowance[from][msg.sender] -= amount;
-        balanceOf[from] -= amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        return true;
-    }
-
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-    }
-
-    function withdraw(uint256 amount) external {
-        balanceOf[msg.sender] -= amount;
-        payable(msg.sender).transfer(amount);
-    }
-
-    function deposit() external payable {
-        balanceOf[msg.sender] += msg.value;
-    }
-}
-
-// Mock USDC for testing
-contract MockUSDC {
-    string public name = "USD Coin";
-    string public symbol = "USDC";
-    uint8 public decimals = 6;
-
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    function transfer(address to, uint256 amount) external returns (bool) {
-        balanceOf[msg.sender] -= amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool) {
-        allowance[from][msg.sender] -= amount;
-        balanceOf[from] -= amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        return true;
-    }
-
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-    }
-}
+import {MockPoolManager, MockWETH, MockUSDC, MockLiFiDiamond} from "./Mocks.sol";
 
 /**
  * @title InvestInGasHookTest
@@ -319,6 +232,7 @@ contract InvestInGasHookTest is Test {
 contract LiFiBridgerTest is Test {
     LiFiBridger bridger;
     MockWETH weth;
+    MockLiFiDiamond lifiDiamond;
 
     address owner = address(1);
     address hook = address(2);
@@ -326,7 +240,8 @@ contract LiFiBridgerTest is Test {
 
     function setUp() public {
         weth = new MockWETH();
-        bridger = new LiFiBridger(address(weth), address(0xdead), owner);
+        lifiDiamond = new MockLiFiDiamond();
+        bridger = new LiFiBridger(address(weth), address(lifiDiamond), owner);
 
         vm.prank(owner);
         bridger.setHook(hook);
@@ -381,5 +296,23 @@ contract LiFiBridgerTest is Test {
         vm.prank(hook);
         vm.expectRevert(LiFiBridger.ZeroAmount.selector);
         bridger.directTransfer(0, user);
+    }
+
+    function testBridgeToChainCallsDiamond() public {
+        uint256 amount = 1 ether;
+        bytes memory lifiData = hex"12345678"; // Dummy calldata
+
+        // Mint WETH to hook
+        weth.mint(hook, amount);
+        
+        vm.startPrank(hook);
+        weth.approve(address(bridger), amount);
+
+        // Expect event from MockLiFiDiamond
+        vm.expectEmit(false, false, false, true, address(lifiDiamond));
+        emit MockLiFiDiamond.BridgeCalled(lifiData, amount);
+
+        bridger.bridgeToChain(1, amount, user, lifiData);
+        vm.stopPrank();
     }
 }

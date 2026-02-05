@@ -17,55 +17,25 @@ interface IWETH is IERC20 {
 }
 
 /**
- * @title ILiFiDiamond
- * @notice Minimal interface for LiFi Diamond proxy
- */
-interface ILiFiDiamond {
-    function startBridgeTokensViaBridge(bytes calldata data) external payable;
-}
-
-/**
  * @title LiFiBridger
- * @notice Handles cross-chain gas delivery via LiFi
- * @dev Unwraps WETH and bridges ETH to target chains
+ * @notice Helper contract to bridge assets via LiFi
  */
 contract LiFiBridger is ILiFiBridger {
     using SafeERC20 for IERC20;
 
     // ============ State Variables ============
 
-    /// @notice WETH contract
     IWETH public immutable weth;
-
-    /// @notice LiFi Diamond proxy address
     address public immutable lifiDiamond;
-
-    /// @notice Authorized hook contract
-    address public hook;
-
-    /// @notice Owner address
     address public owner;
-
-    /// @notice Maximum slippage in basis points (1% = 100)
-    uint16 public constant MAX_SLIPPAGE_BPS = 100;
-
-    // ============ Events ============
-
-    event BridgeExecuted(
-        uint256 indexed destinationChainId,
-        address indexed recipient,
-        uint256 amount
-    );
-
-    event DirectTransferExecuted(address indexed recipient, uint256 amount);
-
-    event HookUpdated(address indexed oldHook, address indexed newHook);
+    address public hook;
 
     // ============ Errors ============
 
     error NotHook();
     error NotOwner();
     error TransferFailed();
+    error BridgeFailed();
     error ZeroAmount();
 
     // ============ Modifiers ============
@@ -115,10 +85,10 @@ contract LiFiBridger is ILiFiBridger {
         // Unwrap WETH to ETH
         weth.withdraw(amount);
 
-        // Execute LiFi bridge with ETH
-        ILiFiDiamond(lifiDiamond).startBridgeTokensViaBridge{value: amount}(
-            lifiData
-        );
+        // Execute LiFi bridge with ETH via low-level call
+        // lifiData must contain the full calldata (selector + args)
+        (bool success, ) = lifiDiamond.call{value: amount}(lifiData);
+        if (!success) revert BridgeFailed();
 
         emit BridgeExecuted(destinationChainId, recipient, amount);
     }
