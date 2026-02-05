@@ -337,10 +337,10 @@ contract InvestInGasHook is BaseHook, ERC721 {
 
     function _beforeSwap(
         address,
-        PoolKey calldata key,
+        PoolKey calldata /* key */,
         SwapParams calldata,
         bytes calldata
-    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
+    ) internal pure override returns (bytes4, BeforeSwapDelta, uint24) {
         return (
             BaseHook.beforeSwap.selector,
             BeforeSwapDeltaLibrary.ZERO_DELTA,
@@ -350,11 +350,11 @@ contract InvestInGasHook is BaseHook, ERC721 {
 
     function _afterSwap(
         address,
-        PoolKey calldata key,
+        PoolKey calldata /* key */,
         SwapParams calldata,
         BalanceDelta,
         bytes calldata
-    ) internal override returns (bytes4, int128) {
+    ) internal pure override returns (bytes4, int128) {
         return (BaseHook.afterSwap.selector, 0);
     }
 

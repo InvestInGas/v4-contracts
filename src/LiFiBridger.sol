@@ -38,6 +38,18 @@ contract LiFiBridger is ILiFiBridger {
     error BridgeFailed();
     error ZeroAmount();
 
+    // ============ Events ============
+
+    event BridgeExecuted(
+        uint256 indexed chainId,
+        address indexed recipient,
+        uint256 amount
+    );
+
+    event DirectTransferExecuted(address indexed recipient, uint256 amount);
+
+    event HookUpdated(address indexed oldHook, address indexed newHook);
+
     // ============ Modifiers ============
 
     modifier onlyHook() {
