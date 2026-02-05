@@ -42,15 +42,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
 
     // ============ Structs ============
 
-    /**
-     * @notice Represents a locked gas position
-     * @param wethAmount Initial WETH amount locked
-     * @param remainingWethAmount Remaining WETH after partial redemptions
-     * @param lockedGasPriceWei Gas price in wei at time of purchase
-     * @param purchaseTimestamp Timestamp when position was created
-     * @param expiry Position expiry timestamp
-     * @param targetChain Chain where gas will be delivered (e.g. "sepolia", "arbitrum", "base")
-     */
     struct GasPosition {
         uint256 wethAmount;
         uint256 remainingWethAmount;
@@ -62,43 +53,26 @@ contract InvestInGasHook is BaseHook, ERC721 {
 
     // ============ State Variables ============
 
-    /// @notice Token used for purchasing (USDC)
     IERC20 public immutable purchaseToken;
-
-    /// @notice WETH token for internal accounting
     IERC20 public immutable weth;
 
-    /// @notice LiFi bridger contract for cross-chain gas delivery
     ILiFiBridger public liFiBridger;
 
-    /// @notice Authorized relayer address for submitting transactions
     address public relayer;
-
-    /// @notice Owner address for admin functions
     address public owner;
 
-    /// @notice Protocol fee in basis points (e.g. 50 = 0.5%)
     uint16 public constant PROTOCOL_FEE_BPS = 50;
-
-    /// @notice Expiry refund fee in basis points (e.g. 200 = 2%)
     uint16 public constant EXPIRY_REFUND_FEE_BPS = 200;
-
-    /// @notice Maximum slippage allowed in basis points (e.g. 100 = 1%)
     uint16 public constant MAX_SLIPPAGE_BPS = 100;
 
-    /// @notice Next token ID for minting
     uint256 private _nextTokenId;
 
-    /// @notice Position data by token ID
     mapping(uint256 => GasPosition) public positions;
 
-    /// @notice Pool key for USDC/WETH pool
     PoolKey public poolKey;
 
-    /// @notice Chain IDs for supported chains
     mapping(string => uint256) public chainIds;
 
-    /// @notice Accumulated protocol fees in WETH
     uint256 public accumulatedFees;
 
     // ============ Events ============
@@ -178,11 +152,10 @@ contract InvestInGasHook is BaseHook, ERC721 {
         relayer = _relayer;
         owner = _owner;
 
-        // Set up supported chain IDs
         chainIds["sepolia"] = 11155111;
-        chainIds["arbitrum"] = 421614; // Arbitrum Sepolia
-        chainIds["base"] = 84532; // Base Sepolia
-        chainIds["polygon"] = 80002; // Polygon Amoy
+        chainIds["arbitrum"] = 421614;
+        chainIds["base"] = 84532;
+        chainIds["polygon"] = 80002;
     }
 
     // ============ Hook Permissions ============
@@ -215,14 +188,7 @@ contract InvestInGasHook is BaseHook, ERC721 {
     // ============ Core Functions ============
 
     /**
-     * @notice Purchase a gas position using USDC
-     * @param usdcAmount Amount of USDC to spend
-     * @param minWethOut Minimum WETH to receive (slippage protection)
-     * @param lockedGasPriceWei Gas price to lock in (from oracle)
-     * @param targetChain Chain where gas will be delivered
-     * @param expiryDuration Duration until position expires (seconds)
-     * @param buyer Address of the position buyer
-     * @return tokenId The minted position NFT ID
+     * Purchase a gas position using USDC
      */
     function purchasePosition(
         uint256 usdcAmount,
@@ -236,25 +202,18 @@ contract InvestInGasHook is BaseHook, ERC721 {
         if (chainIds[targetChain] == 0) revert InvalidChain();
         if (poolKey.tickSpacing == 0) revert PoolNotSet();
 
-        // Transfer USDC from buyer
         purchaseToken.safeTransferFrom(buyer, address(this), usdcAmount);
-
-        // Approve PoolManager to spend USDC
         purchaseToken.approve(address(poolManager), usdcAmount);
 
-        // Execute swap: USDC -> WETH via PoolManager
         uint256 wethReceived = _executeSwap(usdcAmount, minWethOut);
 
-        // Deduct protocol fee
         uint256 feeAmount = (wethReceived * PROTOCOL_FEE_BPS) / 10000;
         uint256 netWethAmount = wethReceived - feeAmount;
         accumulatedFees += feeAmount;
 
-        // Mint position NFT
         tokenId = _nextTokenId++;
         _mint(buyer, tokenId);
 
-        // Store position data
         positions[tokenId] = GasPosition({
             wethAmount: netWethAmount,
             remainingWethAmount: netWethAmount,
@@ -276,11 +235,7 @@ contract InvestInGasHook is BaseHook, ERC721 {
     }
 
     /**
-     * @notice Redeem all or part of a gas position
-     * @param tokenId Position NFT ID
-     * @param wethAmount Amount of WETH to redeem
-     * @param lifiData Calldata for LiFi bridge (empty for same-chain)
-     * @param recipient Address to receive gas on target chain
+     * Redeem all or part of a gas position
      */
     function redeemPosition(
         uint256 tokenId,
@@ -300,12 +255,9 @@ contract InvestInGasHook is BaseHook, ERC721 {
         bool isPartial = wethAmount < pos.remainingWethAmount;
         pos.remainingWethAmount -= wethAmount;
 
-        // If fully redeemed, burn the NFT
         if (pos.remainingWethAmount == 0) {
             _burn(tokenId);
         }
-
-        // Execute redemption via LiFi or direct transfer
         _executeRedemption(wethAmount, pos.targetChain, lifiData, recipient);
 
         emit PositionRedeemed(
@@ -331,16 +283,12 @@ contract InvestInGasHook is BaseHook, ERC721 {
         uint256 remaining = pos.remainingWethAmount;
         if (remaining == 0) revert ZeroAmount();
 
-        // Deduct expiry fee
         uint256 feeAmount = (remaining * EXPIRY_REFUND_FEE_BPS) / 10000;
         uint256 refundAmount = remaining - feeAmount;
         accumulatedFees += feeAmount;
-
-        // Clear position and burn NFT
         pos.remainingWethAmount = 0;
         _burn(tokenId);
 
-        // Refund WETH to user
         weth.safeTransfer(posOwner, refundAmount);
 
         emit PositionExpiryClaimed(tokenId, posOwner, refundAmount, feeAmount);
@@ -352,20 +300,16 @@ contract InvestInGasHook is BaseHook, ERC721 {
         uint256 usdcAmount,
         uint256 minWethOut
     ) internal returns (uint256 wethReceived) {
-        // Build swap params: exact input of USDC for WETH
         SwapParams memory params = SwapParams({
-            zeroForOne: true, // USDC (token0) -> WETH (token1) convention
-            amountSpecified: -int256(usdcAmount), // Negative = exact input
-            sqrtPriceLimitX96: 0 // No price limit, rely on slippage check
+            zeroForOne: true,
+            amountSpecified: -int256(usdcAmount),
+            sqrtPriceLimitX96: 0
         });
 
-        // Execute swap
         BalanceDelta delta = poolManager.swap(poolKey, params, "");
 
-        // Extract WETH received (token1)
         wethReceived = uint256(uint128(delta.amount1()));
 
-        // Slippage check
         if (wethReceived < minWethOut) revert SlippageExceeded();
     }
 
@@ -375,15 +319,11 @@ contract InvestInGasHook is BaseHook, ERC721 {
         bytes calldata lifiData,
         address recipient
     ) internal {
-        // Approve WETH for bridger
         weth.approve(address(liFiBridger), wethAmount);
 
-        // Check if same-chain (Sepolia)
         if (keccak256(bytes(targetChain)) == keccak256(bytes("sepolia"))) {
-            // Direct transfer - no bridge needed
             liFiBridger.directTransfer(wethAmount, recipient);
         } else {
-            // Cross-chain bridge via LiFi
             liFiBridger.bridgeToChain(
                 chainIds[targetChain],
                 wethAmount,
@@ -401,8 +341,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
         SwapParams calldata,
         bytes calldata
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
-        // Only allow swaps on our designated pool
-        // Additional validation can be added here
         return (
             BaseHook.beforeSwap.selector,
             BeforeSwapDeltaLibrary.ZERO_DELTA,
@@ -417,7 +355,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, int128) {
-        // Post-swap accounting if needed
         return (BaseHook.afterSwap.selector, 0);
     }
 
