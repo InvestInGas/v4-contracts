@@ -40,8 +40,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
     using SafeERC20 for IERC20;
     using StateLibrary for IPoolManager;
 
-    // ============ Structs ============
-
     struct GasPosition {
         uint256 wethAmount;
         uint256 remainingWethAmount;
@@ -50,8 +48,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
         uint40 expiry;
         string targetChain;
     }
-
-    // ============ State Variables ============
 
     IERC20 public immutable purchaseToken;
     IERC20 public immutable weth;
@@ -74,8 +70,6 @@ contract InvestInGasHook is BaseHook, ERC721 {
     mapping(string => uint256) public chainIds;
 
     uint256 public accumulatedFees;
-
-    // ============ Events ============
 
     event PositionPurchased(
         uint256 indexed tokenId,

@@ -17,13 +17,10 @@ import {LiFiBridger} from "../src/LiFiBridger.sol";
  * @notice Deploys InvestInGasHook and LiFiBridger to Sepolia testnet
  */
 contract DeployInvestInGas is Script {
-    // Sepolia addresses
-    address constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap v4 PoolManager on Sepolia
+    address constant POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543; // Uniswap v4 PoolManager on Sepolia
     address constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238; // Circle USDC on Sepolia
     address constant WETH = 0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9; // WETH on Sepolia
     address constant LIFI_DIAMOND = 0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE; // LiFi Diamond
-
-    // Note: CREATE2_FACTORY is inherited from forge-std/Base.sol
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -42,7 +39,7 @@ contract DeployInvestInGas is Script {
             USDC,
             WETH,
             relayer,
-            deployer // owner
+            deployer
         );
 
         // Mine hook address

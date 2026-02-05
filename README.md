@@ -1,60 +1,99 @@
 # InvestInGas - ETH-Native Gas Futures
 
-Uniswap v4 hook for gas futures trading. Users deposit USDC, receive NFT positions representing locked gas, and redeem as native ETH/MATIC on target chains.
+InvestInGas is a decentralized application that enables users to hedge against Ethereum gas price volatility. Built as a Uniswap v4 Hook, it allows users to purchase "Gas Positions" - NFT-represented futures contracts that lock in a specific gas price.
 
 ## Architecture
 
-```
-User deposits USDC → Hook swaps to WETH → NFT minted → User redeems → LiFi bridges ETH
-```
+The system consists of two primary contracts:
 
-## Contracts
+*   **`InvestInGasHook`**: A Uniswap v4 hook that manages the purchase logic. Users swap USDC for WETH, which is then locked into a gas position.
+*   **`LiFiBridger`**: A helper contract that leverages LiFi (LI.FI) to bridge assets (ETH) to other chains when a user redeems their position.
 
-- **InvestInGasHook.sol**: Uniswap v4 hook with ERC721 positions
-- **LiFiBridger.sol**: Cross-chain gas delivery via LiFi
-- **ILiFiBridger.sol**: Bridger interface
+```mermaid
+graph LR
+    User[User] -- USDC --> Hook[InvestInGas Hook]
+    Hook -- WETH --> Position[NFT Position]
+    Position -- Redeem --> Bridger[LiFi Bridger]
+    Bridger -- ETH --> Target[Target Chain]
+```
 
 ## Supported Chains
 
 | Chain | Type |
 |-------|------|
-| Sepolia | Same-chain (direct transfer) |
-| Arbitrum Sepolia | Cross-chain bridge |
-| Base Sepolia | Cross-chain bridge |
-| Polygon Amoy | Cross-chain bridge (ETH→MATIC) |
+| **Sepolia** | Deployment Network & Same-chain usage |
+| **Arbitrum Sepolia** | Cross-chain destination |
+| **Base Sepolia** | Cross-chain destination |
+| **Polygon Amoy** | Cross-chain destination |
 
-## Setup
+## Getting Started
+
+### Prerequisites
+
+Ensure you have the following installed:
+
+*   **Foundry**: `curl -L https://foundry.paradigm.xyz | bash`
+*   **Git**: `sudo apt install git` (or equivalent)
+
+### Installation
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/InvestInGas/v4-contracts.git
+    cd v4-contracts
+    ```
+
+2.  Install dependencies:
+    ```bash
+    forge install
+    ```
+
+3.  Build the project:
+    ```bash
+    forge build
+    ```
+
+## Configuration
+
+Duplicate the `.env` template and configure your secrets:
 
 ```bash
-# Install dependencies
-forge install
-
-# Build
-forge build
-
-# Test
-forge test -vvv
-```
-
-## Deployment
-
-```bash
-# Copy env template
 cp .env.example .env
-
-# Edit .env with your private key
-# Then deploy to Sepolia
-forge script script/DeployInvestInGas.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 ```
 
-## Environment Variables
+**Required Variables:**
+*   `PRIVATE_KEY`: Your wallet private key (without `0x`). **Keep this secret!**
+*   `SEPOLIA_RPC`: RPC URL for Sepolia (e.g., from Alchemy or Infura).
 
-| Variable | Description |
-|----------|-------------|
-| PRIVATE_KEY | Deployer wallet private key |
-| RELAYER_ADDRESS | (Optional) Relayer address, defaults to deployer |
-| SEPOLIA_RPC | Sepolia RPC URL |
+**Optional Variables:**
+*   `ETHERSCAN_API_KEY`: For automatic contract verification.
+*   `RELAYER_ADDRESS`: Address of the relayer (defaults to deployer if unset).
 
-## License
+## Deployment Guide
 
-MIT
+We use a Foundry script to securely deploy and configure both contracts.
+
+### 1. Deploy to Sepolia
+
+Run the following command to deploy, broadcast, and verify:
+
+```bash
+source .env && forge script script/DeployInvestInGas.s.sol \
+  --rpc-url $SEPOLIA_RPC \
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY
+```
+
+### 2. Verify Output
+
+On success, the script will output the deployed addresses:
+
+```text
+=== Deployment Summary ===
+InvestInGasHook: 0x...
+LiFiBridger: 0x...
+```
+
+**Important**: Save these addresses for your frontend configuration.
+

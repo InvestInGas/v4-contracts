@@ -87,14 +87,12 @@ contract LiFiBridger is ILiFiBridger {
     ) external onlyHook {
         if (amount == 0) revert ZeroAmount();
 
-        // Transfer WETH from hook
         IERC20(address(weth)).safeTransferFrom(
             msg.sender,
             address(this),
             amount
         );
 
-        // Unwrap WETH to ETH
         weth.withdraw(amount);
 
         // Execute LiFi bridge with ETH via low-level call
