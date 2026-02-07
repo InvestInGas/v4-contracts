@@ -19,6 +19,7 @@ import {
     Currency,
     CurrencyLibrary
 } from "@uniswap/v4-core/src/types/Currency.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -26,6 +27,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    IUnlockCallback
+} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 
 import {ILiFiBridger} from "./interfaces/ILiFiBridger.sol";
 
@@ -34,7 +38,7 @@ import {ILiFiBridger} from "./interfaces/ILiFiBridger.sol";
  * @notice Uniswap v4 hook for gas futures with ERC721 positions
  * @dev Users deposit USDC, receive WETH position NFT, redeem as native gas on target chains
  */
-contract InvestInGasHook is BaseHook, ERC721 {
+contract InvestInGasHook is BaseHook, ERC721, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using SafeERC20 for IERC20;
@@ -47,6 +51,16 @@ contract InvestInGasHook is BaseHook, ERC721 {
         uint40 purchaseTimestamp;
         uint40 expiry;
         string targetChain;
+    }
+
+    // Structure for passing data to unlockCallback
+    struct UnlockData {
+        uint256 usdcAmount;
+        uint256 minWethOut;
+        uint96 lockedGasPriceWei;
+        string targetChain;
+        uint40 expiryDuration;
+        address buyer;
     }
 
     IERC20 public immutable purchaseToken;
@@ -184,6 +198,7 @@ contract InvestInGasHook is BaseHook, ERC721 {
 
     /**
      * Purchase a gas position using USDC
+     * Refactored to use v4 unlock pattern
      */
     function purchasePosition(
         uint256 usdcAmount,
@@ -197,36 +212,72 @@ contract InvestInGasHook is BaseHook, ERC721 {
         if (chainIds[targetChain] == 0) revert InvalidChain();
         if (poolKey.tickSpacing == 0) revert PoolNotSet();
 
-        purchaseToken.safeTransferFrom(buyer, address(this), usdcAmount);
-        purchaseToken.approve(address(poolManager), usdcAmount);
+        // Encode data for the callback
+        bytes memory data = abi.encode(
+            UnlockData({
+                usdcAmount: usdcAmount,
+                minWethOut: minWethOut,
+                lockedGasPriceWei: lockedGasPriceWei,
+                targetChain: targetChain,
+                expiryDuration: expiryDuration,
+                buyer: buyer
+            })
+        );
 
-        uint256 wethReceived = _executeSwap(usdcAmount, minWethOut);
+        // Unlock the PoolManager to perform the swap
+        bytes memory result = poolManager.unlock(data);
+        return abi.decode(result, (uint256));
+    }
 
+    /**
+     * Handle the unlock callback from PoolManager
+     */
+    function unlockCallback(
+        bytes calldata data
+    ) external onlyPoolManager returns (bytes memory) {
+        UnlockData memory unlockData = abi.decode(data, (UnlockData));
+
+        // 1. Pull USDC from buyer to this contract
+        purchaseToken.safeTransferFrom(
+            unlockData.buyer,
+            address(this),
+            unlockData.usdcAmount
+        );
+
+        // 2. Perform the swap
+        uint256 wethReceived = _executeSwap(
+            unlockData.usdcAmount,
+            unlockData.minWethOut
+        );
+
+        // 3. Handle accounting and mint NFT
         uint256 feeAmount = (wethReceived * PROTOCOL_FEE_BPS) / 10000;
         uint256 netWethAmount = wethReceived - feeAmount;
         accumulatedFees += feeAmount;
 
-        tokenId = _nextTokenId++;
-        _mint(buyer, tokenId);
+        uint256 tokenId = _nextTokenId++;
+        _mint(unlockData.buyer, tokenId);
 
         positions[tokenId] = GasPosition({
             wethAmount: netWethAmount,
             remainingWethAmount: netWethAmount,
-            lockedGasPriceWei: lockedGasPriceWei,
+            lockedGasPriceWei: unlockData.lockedGasPriceWei,
             purchaseTimestamp: uint40(block.timestamp),
-            expiry: uint40(block.timestamp + expiryDuration),
-            targetChain: targetChain
+            expiry: uint40(block.timestamp + unlockData.expiryDuration),
+            targetChain: unlockData.targetChain
         });
 
         emit PositionPurchased(
             tokenId,
-            buyer,
-            usdcAmount,
+            unlockData.buyer,
+            unlockData.usdcAmount,
             netWethAmount,
-            lockedGasPriceWei,
-            targetChain,
-            uint40(block.timestamp + expiryDuration)
+            unlockData.lockedGasPriceWei,
+            unlockData.targetChain,
+            uint40(block.timestamp + unlockData.expiryDuration)
         );
+
+        return abi.encode(tokenId);
     }
 
     /**
@@ -295,17 +346,47 @@ contract InvestInGasHook is BaseHook, ERC721 {
         uint256 usdcAmount,
         uint256 minWethOut
     ) internal returns (uint256 wethReceived) {
+        // For zeroForOne = true (USDC -> WETH), price must go DOWN
+        uint160 sqrtPriceLimitX96 = TickMath.MIN_SQRT_PRICE + 1;
+
         SwapParams memory params = SwapParams({
             zeroForOne: true,
             amountSpecified: -int256(usdcAmount),
-            sqrtPriceLimitX96: 0
+            sqrtPriceLimitX96: sqrtPriceLimitX96
         });
 
+        // 1. Perform Swap (returns deltas but doesn't move tokens)
         BalanceDelta delta = poolManager.swap(poolKey, params, "");
 
-        wethReceived = uint256(uint128(delta.amount1()));
+        // 2. Settle the input (USDC)
+        // delta.amount0() will be negative (we owe the pool)
+        if (delta.amount0() < 0) {
+            uint256 currentUsdcBalance = purchaseToken.balanceOf(address(this));
+            uint256 amountToSettle = uint256(uint128(-delta.amount0()));
+
+            // Ensure we have enough USDC
+            if (currentUsdcBalance < amountToSettle) revert ZeroAmount(); // Or custom error
+
+            purchaseToken.approve(address(poolManager), amountToSettle);
+            poolManager.settle();
+        }
+
+        // 3. Take the output (WETH)
+        // delta.amount1() will be positive (the pool owes us)
+        if (delta.amount1() > 0) {
+            wethReceived = uint256(uint128(delta.amount1()));
+            poolManager.take(poolKey.currency1, address(this), wethReceived);
+        }
 
         if (wethReceived < minWethOut) revert SlippageExceeded();
+    }
+
+    /**
+     * @notice Manually initialize the pool if it hasn't been done yet
+     * @param sqrtPriceX96 Initial price
+     */
+    function initializePool(uint160 sqrtPriceX96) external onlyOwner {
+        poolManager.initialize(poolKey, sqrtPriceX96);
     }
 
     function _executeRedemption(
