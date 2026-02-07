@@ -146,10 +146,11 @@ contract InvestInGasHook is BaseHook, ERC721 {
         relayer = _relayer;
         owner = _owner;
 
-        chainIds["sepolia"] = 11155111;
+        chainIds["ethereum"] = 11155111;
         chainIds["arbitrum"] = 421614;
         chainIds["base"] = 84532;
         chainIds["polygon"] = 80002;
+        chainIds["optimism"] = 11155420;
     }
 
     // ============ Hook Permissions ============

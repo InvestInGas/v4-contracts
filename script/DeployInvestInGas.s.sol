@@ -77,6 +77,22 @@ contract DeployInvestInGas is Script {
         bridger.setHook(address(hook));
         console.log("Hook set in bridger");
 
+        // 5. Configure: Set PoolKey for USDC/WETH
+        // Note: Currency ordering: lower address is Currency0
+        address currency0 = USDC < WETH ? USDC : WETH;
+        address currency1 = USDC < WETH ? WETH : USDC;
+
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(currency0),
+            currency1: Currency.wrap(currency1),
+            fee: 3000, // 0.3% fee tier
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
+        });
+
+        hook.setPoolKey(key);
+        console.log("PoolKey set in hook for USDC/WETH (0.3%)");
+
         vm.stopBroadcast();
 
         // Output for verification
