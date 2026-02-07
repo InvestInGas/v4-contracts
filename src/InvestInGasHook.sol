@@ -316,7 +316,7 @@ contract InvestInGasHook is BaseHook, ERC721 {
     ) internal {
         weth.approve(address(liFiBridger), wethAmount);
 
-        if (keccak256(bytes(targetChain)) == keccak256(bytes("sepolia"))) {
+        if (keccak256(bytes(targetChain)) == keccak256(bytes("ethereum"))) {
             liFiBridger.directTransfer(wethAmount, recipient);
         } else {
             liFiBridger.bridgeToChain(
