@@ -39,17 +39,19 @@ A dedicated helper for cross-chain asset movement.
 The primary deployment script for the protocol.
 - **Hook Mining**: Uses `HookMiner` to find a CREATE2 salt that results in a hook address with the correct Uniswap v4 flags (beforeSwap, afterSwap).
 - **Setup**: Deploys both `InvestInGasHook` and `LiFiBridger`, links them together, and sets the default `PoolKey`.
-
-### `InitializePool.s.sol`
-Initializes the Uniswap v4 pool for the USDC/WETH pair. This is required before any swaps or liquidity can be added.
+- **Initialization**: Automatically initializes the pool with a default price (approx. Tick 38698) to ensure swaps are immediately functional.
 
 ### `AddLiquidity.s.sol`
 A complex script to add liquidity to the Uniswap v4 pool.
-- **LiquidityHelper**: Deploys a temporary helper contract to handle the Uniswap v4 `unlockCallback`, which is required for moving tokens into the PoolManager.
-- **Position Setup**: Adds concentrated liquidity around the current market price.
+- **LiquidityHelper**: Deploys a temporary helper contract to handle the Uniswap v4 `unlockCallback`.
+- **Target Tier**: Currently configured for the **0.30% fee tier** (3000 fee, 60 tick spacing).
+- **Position Setup**: Adds concentrated liquidity around the active price.
 
-### `FixPoolPrice.s.sol`
-A utility script used to re-initialize the system with a different pool (e.g., a different fee tier) if the original pool parameter needs adjustment.
+### `CheckPoolState.s.sol`
+A diagnostic utility to check the current price and liquidity across multiple pool tiers (0.3%, 0.05%, 1.0%). Use this to verify if a pool is "healthy" before attempting a purchase.
+
+### `AlignExistingHook.s.sol`
+A migration utility used to update an already-deployed hook's `poolKey` to a new fee tier without redeploying the entire contract.
 
 ## Supported Chains
 
@@ -60,6 +62,16 @@ A utility script used to re-initialize the system with a different pool (e.g., a
 | **Base Sepolia** | Cross-chain destination | 84532 |
 | **Polygon Amoy** | Cross-chain destination | 80002 |
 | **Optimism Sepolia** | Cross-chain destination | 11155420 |
+
+## Uniswap v4 Pool Setup
+
+The system is optimized for the following pool configuration:
+- **Pair**: `USDC` / `WETH`
+- **Fee Tier**: `3000` (0.30%)
+- **Tick Spacing**: `60`
+- **Hook Flags**: `BEFORE_SWAP` | `AFTER_SWAP`
+
+**Warning**: Swaps will revert with `PriceLimitAlreadyExceeded` if the pool is uninitialized or has zero liquidity at the target price range. Use `CheckPoolState.s.sol` to verify.
 
 ## Getting Started
 

@@ -100,8 +100,8 @@ contract AddLiquidity is Script {
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(currency0),
             currency1: Currency.wrap(currency1),
-            fee: 500,
-            tickSpacing: 10,
+            fee: 3000,
+            tickSpacing: 60,
             hooks: IHooks(HOOK)
         });
 
@@ -119,9 +119,9 @@ contract AddLiquidity is Script {
         console.log("Tokens approved to Helper");
 
         // 3. Add Liquidity
-        // Around tick 198000 to 198200 (wider range)
-        // Liquidity delta: 1e12 is ~0.5 USDC worth
-        helper.addLiquidity(key, 198000, 198200, 1e12);
+        // Around tick 38640 to 38700 (multiples of 60 covering current price)
+        // Liquidity delta: 1e7 is approx 10 USDC worth
+        helper.addLiquidity(key, 38640, 38700, 1e7);
 
         console.log("Liquidity successfully added to the new 0.05% pool!");
 

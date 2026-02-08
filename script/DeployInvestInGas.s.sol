@@ -85,14 +85,23 @@ contract DeployInvestInGas is Script {
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(currency0),
             currency1: Currency.wrap(currency1),
-            fee: 3000, // 0.3% fee tier
-            tickSpacing: 60,
+            fee: 500, // 0.05% fee tier to match liquidity script
+            tickSpacing: 10,
             hooks: IHooks(address(hook))
         });
 
         hook.setPoolKey(key);
-        console.log("PoolKey set in hook for USDC/WETH (0.3%)");
+        console.log("PoolKey set in hook for USDC/WETH (0.05%)");
 
+        // 6. Configure: Initialize the pool with a starting price
+        // For Sepolia USDC/WETH, Tick 198000 is a good starting point
+        // sqrtPriceX96 = 79228162514264337593543950336 * 1.0001^(tick/2)
+        uint160 startingSqrtPrice = 548480376133241000000000000000; // Approx Tick 198000
+        try hook.initializePool(startingSqrtPrice) {
+            console.log("Pool initialized with starting price");
+        } catch {
+            console.log("Pool already initialized or failed to initialize");
+        }
         vm.stopBroadcast();
 
         // Output for verification
