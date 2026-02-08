@@ -17,14 +17,49 @@ graph LR
     Bridger -- ETH --> Target[Target Chain]
 ```
 
+## Contracts (`src/`)
+
+### `InvestInGasHook.sol`
+The core logic of the protocol, implemented as a Uniswap v4 Hook.
+- **Position Management**: Mints ERC721 tokens (`IIGPOS`) representing gas positions.
+- **Swap Integration**: Uses the Uniswap v4 `unlock` pattern to swap USDC for WETH gas-efficiently.
+- **Redemption**: Orchestrates redemptions, either locally on Sepolia or cross-chain via the `LiFiBridger`.
+- **Expiry Logic**: Users can claim a refund of their WETH (minus a small fee) if their position expires without being used.
+- **Fees**: Manages protocol fees (50 bps) and expiry refund fees (200 bps).
+
+### `LiFiBridger.sol`
+A dedicated helper for cross-chain asset movement.
+- **LiFi Integration**: Interacts with the LiFi Diamond to bridge ETH to various destination chains.
+- **WETH Handling**: Automatically unwraps WETH to native ETH before bridging or local transfer.
+- **Direct Transfers**: Handles "redemptions" to the same chain (Sepolia) by simply unwrapping and sending ETH.
+
+## Scripts (`script/`)
+
+### `DeployInvestInGas.s.sol`
+The primary deployment script for the protocol.
+- **Hook Mining**: Uses `HookMiner` to find a CREATE2 salt that results in a hook address with the correct Uniswap v4 flags (beforeSwap, afterSwap).
+- **Setup**: Deploys both `InvestInGasHook` and `LiFiBridger`, links them together, and sets the default `PoolKey`.
+
+### `InitializePool.s.sol`
+Initializes the Uniswap v4 pool for the USDC/WETH pair. This is required before any swaps or liquidity can be added.
+
+### `AddLiquidity.s.sol`
+A complex script to add liquidity to the Uniswap v4 pool.
+- **LiquidityHelper**: Deploys a temporary helper contract to handle the Uniswap v4 `unlockCallback`, which is required for moving tokens into the PoolManager.
+- **Position Setup**: Adds concentrated liquidity around the current market price.
+
+### `FixPoolPrice.s.sol`
+A utility script used to re-initialize the system with a different pool (e.g., a different fee tier) if the original pool parameter needs adjustment.
+
 ## Supported Chains
 
-| Chain | Type |
-|-------|------|
-| **Sepolia** | Deployment Network & Same-chain usage |
-| **Arbitrum Sepolia** | Cross-chain destination |
-| **Base Sepolia** | Cross-chain destination |
-| **Polygon Amoy** | Cross-chain destination |
+| Chain | Type | Chain ID |
+|-------|------|----------|
+| **Sepolia** | Deployment Network | 11155111 |
+| **Arbitrum Sepolia** | Cross-chain destination | 421614 |
+| **Base Sepolia** | Cross-chain destination | 84532 |
+| **Polygon Amoy** | Cross-chain destination | 80002 |
+| **Optimism Sepolia** | Cross-chain destination | 11155420 |
 
 ## Getting Started
 
@@ -95,5 +130,4 @@ InvestInGasHook: 0x...
 LiFiBridger: 0x...
 ```
 
-**Important**: Save these addresses for your frontend configuration.
-
+**Important**: Save these addresses for your configuration.
