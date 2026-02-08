@@ -367,7 +367,8 @@ contract InvestInGasHook is BaseHook, ERC721, IUnlockCallback {
             // Ensure we have enough USDC
             if (currentUsdcBalance < amountToSettle) revert ZeroAmount(); // Or custom error
 
-            purchaseToken.approve(address(poolManager), amountToSettle);
+            poolManager.sync(poolKey.currency0);
+            purchaseToken.safeTransfer(address(poolManager), amountToSettle);
             poolManager.settle();
         }
 
