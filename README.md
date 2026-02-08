@@ -41,11 +41,17 @@ The primary deployment script for the protocol.
 - **Setup**: Deploys both `InvestInGasHook` and `LiFiBridger`, links them together, and sets the default `PoolKey`.
 - **Initialization**: Automatically initializes the pool with a default price (approx. Tick 38698) to ensure swaps are immediately functional.
 
+### `FinalFix.s.sol`
+A robust finalization utility that ensures the environment is production-ready.
+- **Hook Calibration**: Aligns the Hook's internal `poolKey` with the target liquidity pool.
+- **Pool Initialization**: Initializes the Uniswap v4 pool with a specific `sqrtPriceX96` (e.g., at tick 198000 for approx. $2500 per ETH).
+- **Liquidity injection**: Uses a custom `LiquidityHelper` to bypass Uniswap v4 callback complexities and inject initial concentrated depth.
+
 ### `AddLiquidity.s.sol`
 A complex script to add liquidity to the Uniswap v4 pool.
 - **LiquidityHelper**: Deploys a temporary helper contract to handle the Uniswap v4 `unlockCallback`.
-- **Target Tier**: Currently configured for the **0.30% fee tier** (3000 fee, 60 tick spacing).
-- **Position Setup**: Adds concentrated liquidity around the active price.
+- **Target Tier**: Currently optimized for the **3001 fee tier** (0.3001% fee, 60 tick spacing) to avoid collisions with standard user pools.
+- **Position Setup**: Adds concentrated liquidity around the active price (Tick 198000 range).
 
 ### `CheckPoolState.s.sol`
 A diagnostic utility to check the current price and liquidity across multiple pool tiers (0.3%, 0.05%, 1.0%). Use this to verify if a pool is "healthy" before attempting a purchase.
@@ -60,18 +66,17 @@ A migration utility used to update an already-deployed hook's `poolKey` to a new
 | **Sepolia** | Deployment Network | 11155111 |
 | **Arbitrum Sepolia** | Cross-chain destination | 421614 |
 | **Base Sepolia** | Cross-chain destination | 84532 |
-| **Polygon Amoy** | Cross-chain destination | 80002 |
 | **Optimism Sepolia** | Cross-chain destination | 11155420 |
 
 ## Uniswap v4 Pool Setup
 
 The system is optimized for the following pool configuration:
 - **Pair**: `USDC` / `WETH`
-- **Fee Tier**: `3000` (0.30%)
+- **Fee Tier**: `3001` (0.3001%)
 - **Tick Spacing**: `60`
 - **Hook Flags**: `BEFORE_SWAP` | `AFTER_SWAP`
 
-**Warning**: Swaps will revert with `PriceLimitAlreadyExceeded` if the pool is uninitialized or has zero liquidity at the target price range. Use `CheckPoolState.s.sol` to verify.
+**Warning**: Swaps will revert with `PriceLimitAlreadyExceeded` if the pool is uninitialized or has zero liquidity at the target price range. Use `FinalFix.s.sol` to bootstrap a new environment.
 
 ## Getting Started
 

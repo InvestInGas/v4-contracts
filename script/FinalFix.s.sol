@@ -4,12 +4,10 @@ pragma solidity ^0.8.26;
 import {Script, console} from "forge-std/Script.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {
-    Currency,
-    CurrencyLibrary
-} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {InvestInGasHook} from "../src/InvestInGasHook.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {
     IUnlockCallback
@@ -21,17 +19,14 @@ import {
 
 contract LiquidityHelper is IUnlockCallback {
     IPoolManager public immutable manager;
-
     constructor(IPoolManager _manager) {
         manager = _manager;
     }
-
     struct CallbackData {
         PoolKey key;
         ModifyLiquidityParams params;
         address sender;
     }
-
     function addLiquidity(
         PoolKey memory key,
         int24 tickLower,
@@ -44,20 +39,14 @@ contract LiquidityHelper is IUnlockCallback {
             liquidityDelta: liquidityDelta,
             salt: 0
         });
-
         manager.unlock(abi.encode(CallbackData(key, params, msg.sender)));
     }
-
     function unlockCallback(
         bytes calldata data
     ) external returns (bytes memory) {
         require(msg.sender == address(manager));
         CallbackData memory cb = abi.decode(data, (CallbackData));
-
-        // 1. Modify Liquidity
         (BalanceDelta delta, ) = manager.modifyLiquidity(cb.key, cb.params, "");
-
-        // 2. Settle the negative deltas (tokens we owe)
         if (delta.amount0() < 0) {
             uint256 amount = uint256(uint128(-delta.amount0()));
             manager.sync(cb.key.currency0);
@@ -78,54 +67,56 @@ contract LiquidityHelper is IUnlockCallback {
             );
             manager.settle();
         }
-
         return "";
     }
 }
 
-contract AddLiquidity is Script {
+contract FinalFix is Script {
     address constant POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543;
+    address constant HOOK = 0xaD599566C6cA5b222d782d152d21cF77efdc80C0;
     address constant USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
     address constant WETH = 0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9;
-    address constant HOOK = 0xaD599566C6cA5b222d782d152d21cF77efdc80C0;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        // Sort currencies
         address currency0 = USDC < WETH ? USDC : WETH;
         address currency1 = USDC < WETH ? WETH : USDC;
 
+        // Use a clean tier: 3001 fee, 60 tick spacing
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(currency0),
             currency1: Currency.wrap(currency1),
-            fee: 3000,
+            fee: 3001,
             tickSpacing: 60,
             hooks: IHooks(HOOK)
         });
 
+        // Tick 198000 corresponds to approx 2500 USDC per ETH
+        uint160 startingSqrtPrice = 1584563250285286751870879006720000; // Corrected: ~20000 * 2^96
+
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. Deploy Helper
+        // 1. Update Hook and Initialize Pool
+        InvestInGasHook(HOOK).setPoolKey(key);
+        console.log("Updated hook poolKey to 3001 tier");
+
+        try IPoolManager(POOL_MANAGER).initialize(key, startingSqrtPrice) {
+            console.log("Pool initialized!");
+        } catch {
+            console.log("Pool already initialized");
+        }
+        // 2. Add Liquidity
         LiquidityHelper helper = new LiquidityHelper(
             IPoolManager(POOL_MANAGER)
         );
-        console.log("LiquidityHelper deployed at:", address(helper));
-
-        // 2. Approve Tokens to Helper
         IERC20(USDC).approve(address(helper), type(uint256).max);
         IERC20(WETH).approve(address(helper), type(uint256).max);
-        console.log("Tokens approved to Helper");
 
-        // 3. Add Liquidity
-        // Around tick 198000 (multiples of 60 covering current price)
-        // Tick 198000 correspond to approx USDC/WETH price
-        helper.addLiquidity(key, 197880, 198120, 1e15);
-
-        console.log(
-            "Liquidity successfully added to the 0.3% pool at tick 198000!"
-        );
+        // Add liquidity around tick 198000
+        helper.addLiquidity(key, 197940, 198060, 1e15);
+        console.log("Liquidity added!");
 
         vm.stopBroadcast();
     }
